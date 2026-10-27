@@ -1,0 +1,14 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Run BASIC in XRoar",
+            "type": "shell",
+            "command": "& 'C:\\Program Files\\6809.org.uk\\XRoar 1.12\\xroar.exe' -machine coco -load-text '${file}'",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}

@@ -1,0 +1,356 @@
+                      (C:\Dev\github\philippeback\coco\):00001 ; =============================================================================
+                      (C:\Dev\github\philippeback\coco\):00002 ; BALLML.ASM - 6809 Machine Language 60 FPS Boing Ball Engine for Tandy CoCo 1
+                      (C:\Dev\github\philippeback\coco\):00003 ; Assemble with:
+                      (C:\Dev\github\philippeback\coco\):00004 ;   lwasm -9 -b -f raw -o ballml.raw --list=ballml.lst BALLML.ASM
+                      (C:\Dev\github\philippeback\coco\):00005 ; =============================================================================
+                      (C:\Dev\github\philippeback\coco\):00006 ; Memory Map (with PCLEAR 8 and CLEAR 200,&H5FFF):
+                      (C:\Dev\github\philippeback\coco\):00007 ;   $0600-$1DFF : Video Buffer A (Pages 1-4, PMODE 3) -> Base stored at $00BC!
+                      (C:\Dev\github\philippeback\coco\):00008 ;   $1E00-$35FF : Video Buffer B (Pages 5-8, PMODE 3) -> Base + $1800!
+                      (C:\Dev\github\philippeback\coco\):00009 ;   $6000-$623F : Circular AND Mask (12 bytes x 48 rows = 576 bytes)
+                      (C:\Dev\github\philippeback\coco\):00010 ;   $6240-$743F : 8 Rotation Frames (8 x 576 bytes = 4608 bytes)
+                      (C:\Dev\github\philippeback\coco\):00011 ;   $7440-$767F : Saved Background Patch G0 (Page 1, 576 bytes)
+                      (C:\Dev\github\philippeback\coco\):00012 ;   $7680-$78BF : Saved Background Patch G1 (Page 5, 576 bytes)
+                      (C:\Dev\github\philippeback\coco\):00013 ;   $7D00-$7FFF : 6809 Machine Language Engine & State Variables
+                      (C:\Dev\github\philippeback\coco\):00014 ; =============================================================================
+                      (C:\Dev\github\philippeback\coco\):00015 
+                      (C:\Dev\github\philippeback\coco\):00016         ORG     $7D00
+                      (C:\Dev\github\philippeback\coco\):00017 
+                      (C:\Dev\github\philippeback\coco\):00018 ;Fixed entry points for BASIC DEFUSR0 and DEFUSR1:
+7D00 7E7D12           (C:\Dev\github\philippeback\coco\):00019 USR0_ENTRY      JMP     CAPTURE_PATCH   ; $7D00: Copy 48x48 from (8,8) to [$7FFE]
+7D03 7E7D68           (C:\Dev\github\philippeback\coco\):00020 USR1_ENTRY      JMP     RUN_ENGINE      ; $7D03: Run 60 FPS page-flipped bounce loop
+                      (C:\Dev\github\philippeback\coco\):00021 
+                      (C:\Dev\github\philippeback\coco\):00022 ; -----------------------------------------------------------------------------
+                      (C:\Dev\github\philippeback\coco\):00023 ; State Variables
+                      (C:\Dev\github\philippeback\coco\):00024 ; -----------------------------------------------------------------------------
+7D06 10               (C:\Dev\github\philippeback\coco\):00025 BX_SUB          FCB     16              ; X byte col * 4 (8..72 -> col 2..18)
+7D07 01               (C:\Dev\github\philippeback\coco\):00026 VX_SUB          FCB     1               ; Horizontal speed (+1 or -1)
+7D08 0140             (C:\Dev\github\philippeback\coco\):00027 BY_FP           FDB     $0140           ; 12.4 fixed-point Y (20 * 16 = 320)
+7D0A 0000             (C:\Dev\github\philippeback\coco\):00028 VY_FP           FDB     $0000           ; 12.4 fixed-point vertical velocity
+7D0C 00               (C:\Dev\github\philippeback\coco\):00029 FR_CNT          FCB     0               ; Rotation counter
+7D0D 01               (C:\Dev\github\philippeback\coco\):00030 DR_STEP         FCB     1               ; Rotation direction (+1 or -1)
+7D0E 0884             (C:\Dev\github\philippeback\coco\):00031 OLD0_ADDR       FDB     $0884           ; Previous ball address on Page 1 ($0600)
+7D10 2084             (C:\Dev\github\philippeback\coco\):00032 OLD1_ADDR       FDB     $2084           ; Previous ball address on Page 5 ($1E00)
+                      (C:\Dev\github\philippeback\coco\):00033 
+                      (C:\Dev\github\philippeback\coco\):00034 ; -----------------------------------------------------------------------------
+                      (C:\Dev\github\philippeback\coco\):00035 ; USR0 ($7D00 -> CAPTURE_PATCH):
+                      (C:\Dev\github\philippeback\coco\):00036 ;   Copies 48x48 patch (12 bytes x 48 scanlines = 576 bytes) from (8,8) on
+                      (C:\Dev\github\philippeback\coco\):00037 ;   Page 1 ($0600 + 8*32 + 1 = $0701) to destination address in $7FFE:$7FFF.
+                      (C:\Dev\github\philippeback\coco\):00038 ; -----------------------------------------------------------------------------
+                      (C:\Dev\github\philippeback\coco\):00039 CAPTURE_PATCH:
+7D12 3476             (C:\Dev\github\philippeback\coco\):00040         PSHS    U,Y,X,D
+7D14 8E0701           (C:\Dev\github\philippeback\coco\):00041         LDX     #$0701                  ; Source = (8,8) on Page 1 ($0600 + $0101)
+7D17 FE7FFE           (C:\Dev\github\philippeback\coco\):00042         LDU     $7FFE                   ; Destination address poked by BASIC
+7D1A 8D02             (C:\Dev\github\philippeback\coco\):00043         BSR     SAVE_BG
+7D1C 35F6             (C:\Dev\github\philippeback\coco\):00044         PULS    D,X,Y,U,PC
+                      (C:\Dev\github\philippeback\coco\):00045 
+                      (C:\Dev\github\philippeback\coco\):00046 ; -----------------------------------------------------------------------------
+                      (C:\Dev\github\philippeback\coco\):00047 ; SAVE_BG: Copy 48 rows x 12 bytes from screen (X) to linear buffer (U)
+                      (C:\Dev\github\philippeback\coco\):00048 ; -----------------------------------------------------------------------------
+                      (C:\Dev\github\philippeback\coco\):00049 SAVE_BG:
+7D1E C630             (C:\Dev\github\philippeback\coco\):00050         LDB     #48
+                      (C:\Dev\github\philippeback\coco\):00051 SAVE_ROW:
+7D20 3404             (C:\Dev\github\philippeback\coco\):00052         PSHS    B
+7D22 EC81             (C:\Dev\github\philippeback\coco\):00053         LDD     ,X++
+7D24 EDC1             (C:\Dev\github\philippeback\coco\):00054         STD     ,U++
+7D26 EC81             (C:\Dev\github\philippeback\coco\):00055         LDD     ,X++
+7D28 EDC1             (C:\Dev\github\philippeback\coco\):00056         STD     ,U++
+7D2A EC81             (C:\Dev\github\philippeback\coco\):00057         LDD     ,X++
+7D2C EDC1             (C:\Dev\github\philippeback\coco\):00058         STD     ,U++
+7D2E EC81             (C:\Dev\github\philippeback\coco\):00059         LDD     ,X++
+7D30 EDC1             (C:\Dev\github\philippeback\coco\):00060         STD     ,U++
+7D32 EC81             (C:\Dev\github\philippeback\coco\):00061         LDD     ,X++
+7D34 EDC1             (C:\Dev\github\philippeback\coco\):00062         STD     ,U++
+7D36 EC81             (C:\Dev\github\philippeback\coco\):00063         LDD     ,X++
+7D38 EDC1             (C:\Dev\github\philippeback\coco\):00064         STD     ,U++
+7D3A 308814           (C:\Dev\github\philippeback\coco\):00065         LEAX    20,X                    ; Next scanline (32 - 12 = 20)
+7D3D 3504             (C:\Dev\github\philippeback\coco\):00066         PULS    B
+7D3F 5A               (C:\Dev\github\philippeback\coco\):00067         DECB
+7D40 26DE             (C:\Dev\github\philippeback\coco\):00068         BNE     SAVE_ROW
+7D42 39               (C:\Dev\github\philippeback\coco\):00069         RTS
+                      (C:\Dev\github\philippeback\coco\):00070 
+                      (C:\Dev\github\philippeback\coco\):00071 ; -----------------------------------------------------------------------------
+                      (C:\Dev\github\philippeback\coco\):00072 ; RESTORE_BG: Copy 48 rows x 12 bytes from linear buffer (X) to screen (U)
+                      (C:\Dev\github\philippeback\coco\):00073 ; -----------------------------------------------------------------------------
+                      (C:\Dev\github\philippeback\coco\):00074 RESTORE_BG:
+7D43 C630             (C:\Dev\github\philippeback\coco\):00075         LDB     #48
+                      (C:\Dev\github\philippeback\coco\):00076 REST_ROW:
+7D45 3404             (C:\Dev\github\philippeback\coco\):00077         PSHS    B
+7D47 EC81             (C:\Dev\github\philippeback\coco\):00078         LDD     ,X++
+7D49 EDC1             (C:\Dev\github\philippeback\coco\):00079         STD     ,U++
+7D4B EC81             (C:\Dev\github\philippeback\coco\):00080         LDD     ,X++
+7D4D EDC1             (C:\Dev\github\philippeback\coco\):00081         STD     ,U++
+7D4F EC81             (C:\Dev\github\philippeback\coco\):00082         LDD     ,X++
+7D51 EDC1             (C:\Dev\github\philippeback\coco\):00083         STD     ,U++
+7D53 EC81             (C:\Dev\github\philippeback\coco\):00084         LDD     ,X++
+7D55 EDC1             (C:\Dev\github\philippeback\coco\):00085         STD     ,U++
+7D57 EC81             (C:\Dev\github\philippeback\coco\):00086         LDD     ,X++
+7D59 EDC1             (C:\Dev\github\philippeback\coco\):00087         STD     ,U++
+7D5B EC81             (C:\Dev\github\philippeback\coco\):00088         LDD     ,X++
+7D5D EDC1             (C:\Dev\github\philippeback\coco\):00089         STD     ,U++
+7D5F 33C814           (C:\Dev\github\philippeback\coco\):00090         LEAU    20,U                    ; Next scanline (32 - 12 = 20)
+7D62 3504             (C:\Dev\github\philippeback\coco\):00091         PULS    B
+7D64 5A               (C:\Dev\github\philippeback\coco\):00092         DECB
+7D65 26DE             (C:\Dev\github\philippeback\coco\):00093         BNE     REST_ROW
+7D67 39               (C:\Dev\github\philippeback\coco\):00094         RTS
+                      (C:\Dev\github\philippeback\coco\):00095 
+                      (C:\Dev\github\philippeback\coco\):00096 ; -----------------------------------------------------------------------------
+                      (C:\Dev\github\philippeback\coco\):00097 ; USR1 ($7D03 -> RUN_ENGINE):
+                      (C:\Dev\github\philippeback\coco\):00098 ;   Main 60 FPS VSYNC-locked hardware page-flipping animation loop
+                      (C:\Dev\github\philippeback\coco\):00099 ; -----------------------------------------------------------------------------
+                      (C:\Dev\github\philippeback\coco\):00100 RUN_ENGINE:
+7D68 347F             (C:\Dev\github\philippeback\coco\):00101         PSHS    CC,DP,U,Y,X,D
+7D6A 1A50             (C:\Dev\github\philippeback\coco\):00102         ORCC    #$50                    ; Disable IRQ/FIRQ during high-speed blitting
+                      (C:\Dev\github\philippeback\coco\):00103 
+                      (C:\Dev\github\philippeback\coco\):00104         ; Initialize state variables
+7D6C CC1001           (C:\Dev\github\philippeback\coco\):00105         LDD     #$1001                  ; BX_SUB = 16 (col 4), VX_SUB = +1
+7D6F FD7D06           (C:\Dev\github\philippeback\coco\):00106         STD     BX_SUB
+7D72 CC0140           (C:\Dev\github\philippeback\coco\):00107         LDD     #$0140                  ; BY_FP = 20 * 16
+7D75 FD7D08           (C:\Dev\github\philippeback\coco\):00108         STD     BY_FP
+7D78 CC0000           (C:\Dev\github\philippeback\coco\):00109         LDD     #$0000                  ; VY_FP = 0
+7D7B FD7D0A           (C:\Dev\github\philippeback\coco\):00110         STD     VY_FP
+7D7E CC0001           (C:\Dev\github\philippeback\coco\):00111         LDD     #$0001                  ; FR_CNT = 0, DR_STEP = +1
+7D81 FD7D0C           (C:\Dev\github\philippeback\coco\):00112         STD     FR_CNT
+7D84 CC0884           (C:\Dev\github\philippeback\coco\):00113         LDD     #$0884                  ; $0600 + 20*32 + 4 = $0884
+7D87 FD7D0E           (C:\Dev\github\philippeback\coco\):00114         STD     OLD0_ADDR
+7D8A CC2084           (C:\Dev\github\philippeback\coco\):00115         LDD     #$2084                  ; $1E00 + 20*32 + 4 = $2084
+7D8D FD7D10           (C:\Dev\github\philippeback\coco\):00116         STD     OLD1_ADDR
+                      (C:\Dev\github\philippeback\coco\):00117 
+                      (C:\Dev\github\philippeback\coco\):00118         ; Save initial background patches into G0 ($7440) and G1 ($7680)
+7D90 BE7D0E           (C:\Dev\github\philippeback\coco\):00119         LDX     OLD0_ADDR
+7D93 CE7440           (C:\Dev\github\philippeback\coco\):00120         LDU     #$7440
+7D96 BD7D1E           (C:\Dev\github\philippeback\coco\):00121         JSR     SAVE_BG
+7D99 BE7D10           (C:\Dev\github\philippeback\coco\):00122         LDX     OLD1_ADDR
+7D9C CE7680           (C:\Dev\github\philippeback\coco\):00123         LDU     #$7680
+7D9F BD7D1E           (C:\Dev\github\philippeback\coco\):00124         JSR     SAVE_BG
+                      (C:\Dev\github\philippeback\coco\):00125 
+                      (C:\Dev\github\philippeback\coco\):00126 MAIN_LOOP:
+                      (C:\Dev\github\philippeback\coco\):00127         ; --- 1) Render on hidden Page 5 ($1E00) while Page 1 ($0600) is shown ---
+7DA2 FE7D10           (C:\Dev\github\philippeback\coco\):00128         LDU     OLD1_ADDR
+7DA5 8E7680           (C:\Dev\github\philippeback\coco\):00129         LDX     #$7680                  ; G1 background buffer
+7DA8 BD7D43           (C:\Dev\github\philippeback\coco\):00130         JSR     RESTORE_BG
+                      (C:\Dev\github\philippeback\coco\):00131 
+7DAB BD7E7F           (C:\Dev\github\philippeback\coco\):00132         JSR     STEP_PHYSICS            ; Returns D = Y*32 + X_col
+7DAE C31E00           (C:\Dev\github\philippeback\coco\):00133         ADDD    #$1E00                  ; Add Page 5 base address ($1E00)
+7DB1 FD7D10           (C:\Dev\github\philippeback\coco\):00134         STD     OLD1_ADDR
+7DB4 1F01             (C:\Dev\github\philippeback\coco\):00135         TFR     D,X
+7DB6 CE7680           (C:\Dev\github\philippeback\coco\):00136         LDU     #$7680
+7DB9 BD7D1E           (C:\Dev\github\philippeback\coco\):00137         JSR     SAVE_BG
+                      (C:\Dev\github\philippeback\coco\):00138 
+7DBC FE7D10           (C:\Dev\github\philippeback\coco\):00139         LDU     OLD1_ADDR
+7DBF BD7E0B           (C:\Dev\github\philippeback\coco\):00140         JSR     DRAW_BALL
+                      (C:\Dev\github\philippeback\coco\):00141 
+7DC2 BD7EDE           (C:\Dev\github\philippeback\coco\):00142         JSR     WAIT_VSYNC
+                      (C:\Dev\github\philippeback\coco\):00143         ; Flip SAM display address to Page 5 ($1E00 -> F = 15 = %0001111):
+                      (C:\Dev\github\philippeback\coco\):00144         ; Page 1 ($0600) is F = 3 (%0000011). Set F2 ($FFCB) and F3 ($FFCD)!
+7DC5 B7FFCB           (C:\Dev\github\philippeback\coco\):00145         STA     $FFCB                   ; Set SAM F2
+7DC8 B7FFCD           (C:\Dev\github\philippeback\coco\):00146         STA     $FFCD                   ; Set SAM F3 -> Page 5 ($1E00) now visible!
+                      (C:\Dev\github\philippeback\coco\):00147 
+                      (C:\Dev\github\philippeback\coco\):00148         ; --- 2) Render on hidden Page 1 ($0600) while Page 5 ($1E00) is shown ---
+7DCB FE7D0E           (C:\Dev\github\philippeback\coco\):00149         LDU     OLD0_ADDR
+7DCE 8E7440           (C:\Dev\github\philippeback\coco\):00150         LDX     #$7440                  ; G0 background buffer
+7DD1 BD7D43           (C:\Dev\github\philippeback\coco\):00151         JSR     RESTORE_BG
+                      (C:\Dev\github\philippeback\coco\):00152 
+7DD4 BD7E7F           (C:\Dev\github\philippeback\coco\):00153         JSR     STEP_PHYSICS            ; Returns D = Y*32 + X_col
+7DD7 C30600           (C:\Dev\github\philippeback\coco\):00154         ADDD    #$0600                  ; Add Page 1 base address ($0600)
+7DDA FD7D0E           (C:\Dev\github\philippeback\coco\):00155         STD     OLD0_ADDR
+7DDD 1F01             (C:\Dev\github\philippeback\coco\):00156         TFR     D,X
+7DDF CE7440           (C:\Dev\github\philippeback\coco\):00157         LDU     #$7440
+7DE2 BD7D1E           (C:\Dev\github\philippeback\coco\):00158         JSR     SAVE_BG
+                      (C:\Dev\github\philippeback\coco\):00159 
+7DE5 FE7D0E           (C:\Dev\github\philippeback\coco\):00160         LDU     OLD0_ADDR
+7DE8 BD7E0B           (C:\Dev\github\philippeback\coco\):00161         JSR     DRAW_BALL
+                      (C:\Dev\github\philippeback\coco\):00162 
+7DEB BD7EDE           (C:\Dev\github\philippeback\coco\):00163         JSR     WAIT_VSYNC
+                      (C:\Dev\github\philippeback\coco\):00164         ; Flip SAM display address back to Page 1 ($0600 -> F = 3 = %0000011):
+                      (C:\Dev\github\philippeback\coco\):00165         ; Clear F2 ($FFCA) and Clear F3 ($FFCC)!
+7DEE B7FFCA           (C:\Dev\github\philippeback\coco\):00166         STA     $FFCA                   ; Clear SAM F2
+7DF1 B7FFCC           (C:\Dev\github\philippeback\coco\):00167         STA     $FFCC                   ; Clear SAM F3 -> Page 1 ($0600) now visible!
+                      (C:\Dev\github\philippeback\coco\):00168 
+                      (C:\Dev\github\philippeback\coco\):00169         ; Check keyboard matrix for BREAK key to exit cleanly to BASIC
+7DF4 86FB             (C:\Dev\github\philippeback\coco\):00170         LDA     #$FB                    ; Strobe column 2 (BREAK)
+7DF6 B7FF02           (C:\Dev\github\philippeback\coco\):00171         STA     $FF02
+7DF9 B6FF00           (C:\Dev\github\philippeback\coco\):00172         LDA     $FF00
+7DFC 8440             (C:\Dev\github\philippeback\coco\):00173         ANDA    #$40                    ; Row 6 = BREAK
+7DFE 2703             (C:\Dev\github\philippeback\coco\):00174         BEQ     EXIT_ENGINE
+7E00 7E7DA2           (C:\Dev\github\philippeback\coco\):00175         JMP     MAIN_LOOP
+                      (C:\Dev\github\philippeback\coco\):00176 
+                      (C:\Dev\github\philippeback\coco\):00177 EXIT_ENGINE:
+                      (C:\Dev\github\philippeback\coco\):00178         ; Ensure SAM display is pointing to Page 1 ($0600) before returning
+7E03 B7FFCA           (C:\Dev\github\philippeback\coco\):00179         STA     $FFCA
+7E06 B7FFCC           (C:\Dev\github\philippeback\coco\):00180         STA     $FFCC
+7E09 35FF             (C:\Dev\github\philippeback\coco\):00181         PULS    D,X,Y,U,DP,CC,PC
+                      (C:\Dev\github\philippeback\coco\):00182 
+                      (C:\Dev\github\philippeback\coco\):00183 ; -----------------------------------------------------------------------------
+                      (C:\Dev\github\philippeback\coco\):00184 ; DRAW_BALL: Masked 48x48 sprite blit onto screen at U
+                      (C:\Dev\github\philippeback\coco\):00185 ;   Mask:   $6000 (576 bytes)
+                      (C:\Dev\github\philippeback\coco\):00186 ;   Sprite: $6240 + ((FR_CNT / 2) & 7) * 576
+                      (C:\Dev\github\philippeback\coco\):00187 ; -----------------------------------------------------------------------------
+                      (C:\Dev\github\philippeback\coco\):00188 DRAW_BALL:
+7E0B B67D0C           (C:\Dev\github\philippeback\coco\):00189         LDA     FR_CNT
+7E0E 44               (C:\Dev\github\philippeback\coco\):00190         LSRA                            ; Advance rotation every 2nd 60Hz frame
+7E0F 8407             (C:\Dev\github\philippeback\coco\):00191         ANDA    #$07                    ; 8 rotation frames (0..7)
+7E11 C609             (C:\Dev\github\philippeback\coco\):00192         LDB     #9                      ; 9 * 64 = 576 bytes per frame
+7E13 3D               (C:\Dev\github\philippeback\coco\):00193         MUL                             ; D = frame * 9
+7E14 58               (C:\Dev\github\philippeback\coco\):00194         ASLB
+7E15 49               (C:\Dev\github\philippeback\coco\):00195         ROLA
+7E16 58               (C:\Dev\github\philippeback\coco\):00196         ASLB
+7E17 49               (C:\Dev\github\philippeback\coco\):00197         ROLA
+7E18 58               (C:\Dev\github\philippeback\coco\):00198         ASLB
+7E19 49               (C:\Dev\github\philippeback\coco\):00199         ROLA
+7E1A 58               (C:\Dev\github\philippeback\coco\):00200         ASLB
+7E1B 49               (C:\Dev\github\philippeback\coco\):00201         ROLA
+7E1C 58               (C:\Dev\github\philippeback\coco\):00202         ASLB
+7E1D 49               (C:\Dev\github\philippeback\coco\):00203         ROLA
+7E1E 58               (C:\Dev\github\philippeback\coco\):00204         ASLB
+7E1F 49               (C:\Dev\github\philippeback\coco\):00205         ROLA                            ; D = frame * 576 ($0240)
+7E20 C36240           (C:\Dev\github\philippeback\coco\):00206         ADDD    #$6240
+7E23 1F02             (C:\Dev\github\philippeback\coco\):00207         TFR     D,Y                     ; Y = current rotation frame pointer
+7E25 8E6000           (C:\Dev\github\philippeback\coco\):00208         LDX     #$6000                  ; X = circular AND mask pointer
+7E28 C630             (C:\Dev\github\philippeback\coco\):00209         LDB     #48                     ; 48 scanlines
+                      (C:\Dev\github\philippeback\coco\):00210 DRAW_ROW:
+7E2A 3404             (C:\Dev\github\philippeback\coco\):00211         PSHS    B
+                      (C:\Dev\github\philippeback\coco\):00212         ; Unrolled 12-byte (48-pixel) scanline composite (6 x 16-bit words)
+7E2C ECC4             (C:\Dev\github\philippeback\coco\):00213         LDD     ,U
+7E2E A480             (C:\Dev\github\philippeback\coco\):00214         ANDA    ,X+
+7E30 E480             (C:\Dev\github\philippeback\coco\):00215         ANDB    ,X+
+7E32 AAA0             (C:\Dev\github\philippeback\coco\):00216         ORA     ,Y+
+7E34 EAA0             (C:\Dev\github\philippeback\coco\):00217         ORB     ,Y+
+7E36 EDC1             (C:\Dev\github\philippeback\coco\):00218         STD     ,U++
+                      (C:\Dev\github\philippeback\coco\):00219 
+7E38 ECC4             (C:\Dev\github\philippeback\coco\):00220         LDD     ,U
+7E3A A480             (C:\Dev\github\philippeback\coco\):00221         ANDA    ,X+
+7E3C E480             (C:\Dev\github\philippeback\coco\):00222         ANDB    ,X+
+7E3E AAA0             (C:\Dev\github\philippeback\coco\):00223         ORA     ,Y+
+7E40 EAA0             (C:\Dev\github\philippeback\coco\):00224         ORB     ,Y+
+7E42 EDC1             (C:\Dev\github\philippeback\coco\):00225         STD     ,U++
+                      (C:\Dev\github\philippeback\coco\):00226 
+7E44 ECC4             (C:\Dev\github\philippeback\coco\):00227         LDD     ,U
+7E46 A480             (C:\Dev\github\philippeback\coco\):00228         ANDA    ,X+
+7E48 E480             (C:\Dev\github\philippeback\coco\):00229         ANDB    ,X+
+7E4A AAA0             (C:\Dev\github\philippeback\coco\):00230         ORA     ,Y+
+7E4C EAA0             (C:\Dev\github\philippeback\coco\):00231         ORB     ,Y+
+7E4E EDC1             (C:\Dev\github\philippeback\coco\):00232         STD     ,U++
+                      (C:\Dev\github\philippeback\coco\):00233 
+7E50 ECC4             (C:\Dev\github\philippeback\coco\):00234         LDD     ,U
+7E52 A480             (C:\Dev\github\philippeback\coco\):00235         ANDA    ,X+
+7E54 E480             (C:\Dev\github\philippeback\coco\):00236         ANDB    ,X+
+7E56 AAA0             (C:\Dev\github\philippeback\coco\):00237         ORA     ,Y+
+7E58 EAA0             (C:\Dev\github\philippeback\coco\):00238         ORB     ,Y+
+7E5A EDC1             (C:\Dev\github\philippeback\coco\):00239         STD     ,U++
+                      (C:\Dev\github\philippeback\coco\):00240 
+7E5C ECC4             (C:\Dev\github\philippeback\coco\):00241         LDD     ,U
+7E5E A480             (C:\Dev\github\philippeback\coco\):00242         ANDA    ,X+
+7E60 E480             (C:\Dev\github\philippeback\coco\):00243         ANDB    ,X+
+7E62 AAA0             (C:\Dev\github\philippeback\coco\):00244         ORA     ,Y+
+7E64 EAA0             (C:\Dev\github\philippeback\coco\):00245         ORB     ,Y+
+7E66 EDC1             (C:\Dev\github\philippeback\coco\):00246         STD     ,U++
+                      (C:\Dev\github\philippeback\coco\):00247 
+7E68 ECC4             (C:\Dev\github\philippeback\coco\):00248         LDD     ,U
+7E6A A480             (C:\Dev\github\philippeback\coco\):00249         ANDA    ,X+
+7E6C E480             (C:\Dev\github\philippeback\coco\):00250         ANDB    ,X+
+7E6E AAA0             (C:\Dev\github\philippeback\coco\):00251         ORA     ,Y+
+7E70 EAA0             (C:\Dev\github\philippeback\coco\):00252         ORB     ,Y+
+7E72 EDC1             (C:\Dev\github\philippeback\coco\):00253         STD     ,U++
+                      (C:\Dev\github\philippeback\coco\):00254 
+7E74 33C814           (C:\Dev\github\philippeback\coco\):00255         LEAU    20,U                    ; Next scanline (32 - 12 = 20)
+7E77 3504             (C:\Dev\github\philippeback\coco\):00256         PULS    B
+7E79 5A               (C:\Dev\github\philippeback\coco\):00257         DECB
+7E7A 1026FFAC         (C:\Dev\github\philippeback\coco\):00258         LBNE    DRAW_ROW
+7E7E 39               (C:\Dev\github\philippeback\coco\):00259         RTS
+                      (C:\Dev\github\philippeback\coco\):00260 
+                      (C:\Dev\github\philippeback\coco\):00261 ; -----------------------------------------------------------------------------
+                      (C:\Dev\github\philippeback\coco\):00262 ; STEP_PHYSICS: Updates X, Y, rotation, bounce audio, returns D = Y*32 + X_col
+                      (C:\Dev\github\philippeback\coco\):00263 ; -----------------------------------------------------------------------------
+                      (C:\Dev\github\philippeback\coco\):00264 STEP_PHYSICS:
+                      (C:\Dev\github\philippeback\coco\):00265         ; 1) Horizontal position (BX_SUB = column * 4)
+7E7F B67D06           (C:\Dev\github\philippeback\coco\):00266         LDA     BX_SUB
+7E82 BB7D07           (C:\Dev\github\philippeback\coco\):00267         ADDA    VX_SUB
+7E85 8108             (C:\Dev\github\philippeback\coco\):00268         CMPA    #8                      ; Left wall = byte col 2 (pixel 8)
+7E87 2C0C             (C:\Dev\github\philippeback\coco\):00269         BGE     CHK_RIGHT
+7E89 8608             (C:\Dev\github\philippeback\coco\):00270         LDA     #8
+7E8B 707D07           (C:\Dev\github\philippeback\coco\):00271         NEG     VX_SUB
+7E8E 707D0D           (C:\Dev\github\philippeback\coco\):00272         NEG     DR_STEP
+7E91 8D57             (C:\Dev\github\philippeback\coco\):00273         BSR     WALL_BEEP
+7E93 200E             (C:\Dev\github\philippeback\coco\):00274         BRA     X_DONE
+                      (C:\Dev\github\philippeback\coco\):00275 CHK_RIGHT:
+7E95 8148             (C:\Dev\github\philippeback\coco\):00276         CMPA    #72                     ; Right wall = byte col 18 (pixel 72)
+7E97 2F0A             (C:\Dev\github\philippeback\coco\):00277         BLE     X_DONE
+7E99 8648             (C:\Dev\github\philippeback\coco\):00278         LDA     #72
+7E9B 707D07           (C:\Dev\github\philippeback\coco\):00279         NEG     VX_SUB
+7E9E 707D0D           (C:\Dev\github\philippeback\coco\):00280         NEG     DR_STEP
+7EA1 8D47             (C:\Dev\github\philippeback\coco\):00281         BSR     WALL_BEEP
+                      (C:\Dev\github\philippeback\coco\):00282 X_DONE:
+7EA3 B77D06           (C:\Dev\github\philippeback\coco\):00283         STA     BX_SUB
+                      (C:\Dev\github\philippeback\coco\):00284 
+                      (C:\Dev\github\philippeback\coco\):00285         ; 2) Rotation step
+7EA6 B67D0C           (C:\Dev\github\philippeback\coco\):00286         LDA     FR_CNT
+7EA9 BB7D0D           (C:\Dev\github\philippeback\coco\):00287         ADDA    DR_STEP
+7EAC B77D0C           (C:\Dev\github\philippeback\coco\):00288         STA     FR_CNT
+                      (C:\Dev\github\philippeback\coco\):00289 
+                      (C:\Dev\github\philippeback\coco\):00290         ; 3) Vertical 12.4 fixed-point gravity & floor bounce
+7EAF FC7D0A           (C:\Dev\github\philippeback\coco\):00291         LDD     VY_FP
+7EB2 C30006           (C:\Dev\github\philippeback\coco\):00292         ADDD    #6                      ; Gravity acceleration
+7EB5 FD7D0A           (C:\Dev\github\philippeback\coco\):00293         STD     VY_FP
+7EB8 F37D08           (C:\Dev\github\philippeback\coco\):00294         ADDD    BY_FP
+7EBB 10830840         (C:\Dev\github\philippeback\coco\):00295         CMPD    #$0840                  ; Floor = Y 132 * 16 = $0840
+7EBF 2F0B             (C:\Dev\github\philippeback\coco\):00296         BLE     Y_DONE
+7EC1 CCFF58           (C:\Dev\github\philippeback\coco\):00297         LDD     #-$00A8                 ; Rebound velocity (-168)
+7EC4 FD7D0A           (C:\Dev\github\philippeback\coco\):00298         STD     VY_FP
+7EC7 8D25             (C:\Dev\github\philippeback\coco\):00299         BSR     FLOOR_BEEP
+7EC9 CC0840           (C:\Dev\github\philippeback\coco\):00300         LDD     #$0840                  ; Clamp to floor Y = 132
+                      (C:\Dev\github\philippeback\coco\):00301 Y_DONE:
+7ECC FD7D08           (C:\Dev\github\philippeback\coco\):00302         STD     BY_FP
+                      (C:\Dev\github\philippeback\coco\):00303 
+                      (C:\Dev\github\philippeback\coco\):00304         ; 4) Compute screen offset D = Y*32 + X_col
+7ECF C4F0             (C:\Dev\github\philippeback\coco\):00305         ANDB    #$F0                    ; Clear fractional 4 bits -> D = Y * 16
+7ED1 58               (C:\Dev\github\philippeback\coco\):00306         ASLB
+7ED2 49               (C:\Dev\github\philippeback\coco\):00307         ROLA                            ; D = Y * 32
+7ED3 3406             (C:\Dev\github\philippeback\coco\):00308         PSHS    D
+7ED5 F67D06           (C:\Dev\github\philippeback\coco\):00309         LDB     BX_SUB
+7ED8 54               (C:\Dev\github\philippeback\coco\):00310         LSRB
+7ED9 54               (C:\Dev\github\philippeback\coco\):00311         LSRB                            ; B = byte column (2..18)
+7EDA 4F               (C:\Dev\github\philippeback\coco\):00312         CLRA
+7EDB E3E1             (C:\Dev\github\philippeback\coco\):00313         ADDD    ,S++                    ; D = Y * 32 + X_col
+7EDD 39               (C:\Dev\github\philippeback\coco\):00314         RTS
+                      (C:\Dev\github\philippeback\coco\):00315 
+                      (C:\Dev\github\philippeback\coco\):00316 ; -----------------------------------------------------------------------------
+                      (C:\Dev\github\philippeback\coco\):00317 ; WAIT_VSYNC: Synchronize to 60 Hz MC6847 VDG Vertical Sync via PIA0
+                      (C:\Dev\github\philippeback\coco\):00318 ; -----------------------------------------------------------------------------
+                      (C:\Dev\github\philippeback\coco\):00319 WAIT_VSYNC:
+7EDE B6FF02           (C:\Dev\github\philippeback\coco\):00320         LDA     $FF02                   ; Clear any stale VSYNC flag
+                      (C:\Dev\github\philippeback\coco\):00321 VSYNC_LOOP:
+7EE1 B6FF03           (C:\Dev\github\philippeback\coco\):00322         LDA     $FF03                   ; Bit 7 = VSYNC interrupt flag
+7EE4 2AFB             (C:\Dev\github\philippeback\coco\):00323         BPL     VSYNC_LOOP
+7EE6 B6FF02           (C:\Dev\github\philippeback\coco\):00324         LDA     $FF02                   ; Acknowledge VSYNC flag
+7EE9 39               (C:\Dev\github\philippeback\coco\):00325         RTS
+                      (C:\Dev\github\philippeback\coco\):00326 
+                      (C:\Dev\github\philippeback\coco\):00327 ; -----------------------------------------------------------------------------
+                      (C:\Dev\github\philippeback\coco\):00328 ; DAC Audio Clicks (WALL_BEEP and FLOOR_BEEP)
+                      (C:\Dev\github\philippeback\coco\):00329 ; -----------------------------------------------------------------------------
+                      (C:\Dev\github\philippeback\coco\):00330 WALL_BEEP:
+7EEA C637             (C:\Dev\github\philippeback\coco\):00331         LDB     #55                     ; Higher pitch delay
+7EEC 2002             (C:\Dev\github\philippeback\coco\):00332         BRA     DO_BEEP
+                      (C:\Dev\github\philippeback\coco\):00333 FLOOR_BEEP:
+7EEE C687             (C:\Dev\github\philippeback\coco\):00334         LDB     #135                    ; Deep thud delay
+                      (C:\Dev\github\philippeback\coco\):00335 DO_BEEP:
+7EF0 3406             (C:\Dev\github\philippeback\coco\):00336         PSHS    D
+7EF2 B6FF23           (C:\Dev\github\philippeback\coco\):00337         LDA     $FF23                   ; Enable 6-bit DAC sound multiplexer
+7EF5 8A08             (C:\Dev\github\philippeback\coco\):00338         ORA     #$08
+7EF7 B7FF23           (C:\Dev\github\philippeback\coco\):00339         STA     $FF23
+7EFA 860A             (C:\Dev\github\philippeback\coco\):00340         LDA     #10                     ; 10 square-wave cycles
+                      (C:\Dev\github\philippeback\coco\):00341 BEEP_LOOP:
+7EFC 3402             (C:\Dev\github\philippeback\coco\):00342         PSHS    A
+7EFE 86FC             (C:\Dev\github\philippeback\coco\):00343         LDA     #$FC                    ; DAC high
+7F00 B7FF20           (C:\Dev\github\philippeback\coco\):00344         STA     $FF20
+7F03 E662             (C:\Dev\github\philippeback\coco\):00345         LDB     2,S                     ; Delay constant in B on stack
+7F05 5A               (C:\Dev\github\philippeback\coco\):00346 DLY_HI: DECB
+7F06 26FD             (C:\Dev\github\philippeback\coco\):00347         BNE     DLY_HI
+7F08 4F               (C:\Dev\github\philippeback\coco\):00348         CLRA                            ; DAC low
+7F09 B7FF20           (C:\Dev\github\philippeback\coco\):00349         STA     $FF20
+7F0C E662             (C:\Dev\github\philippeback\coco\):00350         LDB     2,S
+7F0E 5A               (C:\Dev\github\philippeback\coco\):00351 DLY_LO: DECB
+7F0F 26FD             (C:\Dev\github\philippeback\coco\):00352         BNE     DLY_LO
+7F11 3502             (C:\Dev\github\philippeback\coco\):00353         PULS    A
+7F13 4A               (C:\Dev\github\philippeback\coco\):00354         DECA
+7F14 26E6             (C:\Dev\github\philippeback\coco\):00355         BNE     BEEP_LOOP
+7F16 3586             (C:\Dev\github\philippeback\coco\):00356         PULS    D,PC

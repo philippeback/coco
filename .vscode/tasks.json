@@ -9,6 +9,18 @@
                 "kind": "build",
                 "isDefault": true
             }
+        },
+        {
+            "label": "Build BALLML.BAS (lwasm)",
+            "type": "shell",
+            "command": "powershell -ExecutionPolicy Bypass -File \"${workspaceFolder}\\build.ps1\"",
+            "group": "build"
+        },
+        {
+            "label": "Build & Run BALLML.BAS in XRoar",
+            "type": "shell",
+            "command": "powershell -ExecutionPolicy Bypass -File \"${workspaceFolder}\\build.ps1\" -Run",
+            "group": "build"
         }
     ]
 }

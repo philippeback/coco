@@ -34,7 +34,7 @@ RUN wget -q http://www.lwtools.ca/releases/lwtools/lwtools-${LWTOOLS_VERSION}.ta
     ldconfig
 
 # 3. Build and install CMOC (6809 C Compiler)
-ARG CMOC_VERSION=0.1.88
+ARG CMOC_VERSION=0.1.100
 RUN wget -q http://gvlsywt.cluster051.hosting.ovh.net/dev/cmoc-${CMOC_VERSION}.tar.gz && \
     tar xzf cmoc-${CMOC_VERSION}.tar.gz && \
     cd cmoc-${CMOC_VERSION} && \

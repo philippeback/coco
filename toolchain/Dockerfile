@@ -55,7 +55,7 @@ RUN rm -rf /tmp/build
 
 # 5. Pre-install the Headless MAME Lua VRAM & Register Inspector
 RUN mkdir -p /opt/coco-harness
-cat << 'EOF' > /opt/coco-harness/dump_vram.lua
+RUN cat << 'EOF' > /opt/coco-harness/dump_vram.lua
 local frame = 0
 emu.register_frame_done(function()
     frame = frame + 1
@@ -95,7 +95,7 @@ end)
 EOF
 
 # 6. Pre-install the one-shot compile + boot + verify command (`coco-verify`)
-cat << 'EOF' > /usr/local/bin/coco-verify
+RUN cat << 'EOF' > /usr/local/bin/coco-verify
 #!/usr/bin/env bash
 set -e
 

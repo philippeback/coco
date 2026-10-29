@@ -129,7 +129,7 @@ mame coco3 ${ROM_FLAG} \
 
 cat screen_dump.txt
 EOF
-chmod +x /usr/local/bin/coco-verify
+RUN chmod +x /usr/local/bin/coco-verify
 
 WORKDIR /workspace
 CMD ["/bin/bash"]

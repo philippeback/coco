@@ -1,6 +1,13 @@
 # ==============================================================================
 # CoCo 3 Bare-Metal AI Verification Toolchain
 # Includes: LWTOOLS (lwasm/lwlink), CMOC, ToolShed (decb), and Headless MAME
+#
+# NOTE ON THE EMULATOR CHOICE:
+# Local interactive runs use XRoar (see build.ps1 / .vscode/tasks.json).
+# The container deliberately uses headless MAME instead: XRoar has no Lua
+# support, while MAME's Lua API produces the plain-text CPU register, GIME
+# MMU, and VRAM screen dumps (`dump_vram.lua`) consumed by the AI
+# verification loop via `coco-verify`.
 # ==============================================================================
 FROM ubuntu:24.04
 

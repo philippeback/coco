@@ -20,6 +20,14 @@ Then type `RUN` at the CoCo `OK` prompt.
 
 ---
 
+## Headless Verification (Docker)
+
+For automated (AI-driven) verification, [toolchain/Dockerfile](toolchain/Dockerfile) builds a container with LWTOOLS, CMOC, ToolShed (`decb`), and headless **MAME**, exposing a one-shot `coco-verify` command (compile → disk image → boot → screen dump).
+
+Note the deliberate emulator split: **XRoar** is used for interactive local runs, while the container uses **MAME** because its Lua API can dump the 6809 registers, GIME MMU registers, and the 80×25 text screen as plain text (`dump_vram.lua`) — XRoar has no Lua support.
+
+---
+
 ## How the Code Works
 
 ### 1. Hardware Setup & High-Speed Mode (Lines `10–60`)

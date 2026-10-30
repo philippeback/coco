@@ -138,5 +138,9 @@ cat screen_dump.txt
 EOF
 RUN chmod +x /usr/local/bin/coco-verify
 
+# Ubuntu installs apt MAME into /usr/games, which is not on the default
+# container PATH (affects non-login shells) - expose it in /usr/local/bin.
+RUN ln -sf /usr/games/mame /usr/local/bin/mame
+
 WORKDIR /workspace
 CMD ["/bin/bash"]
